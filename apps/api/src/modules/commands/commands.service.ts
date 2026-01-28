@@ -73,35 +73,43 @@ export class CommandsService {
   ) {
     // Validate command parameters
     switch (command) {
-      case 'set_charge_limit':
-        if (!params?.percent || params.percent < 50 || params.percent > 100) {
+      case 'set_charge_limit': {
+        const percent = params?.percent as number | undefined;
+        if (!percent || percent < 50 || percent > 100) {
           throw new BadRequestException(
             'Charge limit must be between 50 and 100',
           );
         }
         break;
+      }
 
-      case 'set_charging_amps':
-        if (!params?.amps || params.amps < 5 || params.amps > 48) {
+      case 'set_charging_amps': {
+        const amps = params?.amps as number | undefined;
+        if (!amps || amps < 5 || amps > 48) {
           throw new BadRequestException(
             'Charging amps must be between 5 and 48',
           );
         }
         break;
+      }
 
-      case 'set_temps':
-        if (params?.driverTemp && (params.driverTemp < 15 || params.driverTemp > 28)) {
+      case 'set_temps': {
+        const driverTemp = params?.driverTemp as number | undefined;
+        if (driverTemp && (driverTemp < 15 || driverTemp > 28)) {
           throw new BadRequestException(
             'Temperature must be between 15 and 28°C',
           );
         }
         break;
+      }
 
-      case 'remote_seat_heater_request':
-        if (params?.level !== undefined && (params.level < 0 || params.level > 3)) {
+      case 'remote_seat_heater_request': {
+        const level = params?.level as number | undefined;
+        if (level !== undefined && (level < 0 || level > 3)) {
           throw new BadRequestException('Seat heater level must be between 0 and 3');
         }
         break;
+      }
 
       case 'actuate_trunk':
         if (!params?.which || !['front', 'rear'].includes(params.which as string)) {
