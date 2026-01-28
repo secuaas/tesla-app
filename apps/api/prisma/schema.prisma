@@ -1,0 +1,401 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== UTILISATEURS ====================
+model User {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  passwordHash String
+  name         String?
+  role         Role              @default(USER)
+  teslaToken   TeslaToken?
+  vehicles     Vehicle[]
+  preferences  UserPreferences?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model UserPreferences {
+  id                   String  @id @default(cuid())
+  userId               String  @unique
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Unités
+  distanceUnit         String  @default("km") // km ou miles
+  temperatureUnit      String  @default("celsius") // celsius ou fahrenheit
+  currencyCode         String  @default("CAD")
+
+  // Tarifs électricité
+  homeElectricityRate  Float   @default(0.10) // $/kWh
+  homePeakRate         Float? // Heures pleines
+  homeOffPeakRate      Float? // Heures creuses
+  peakHoursStart       Int? // 7 = 7h
+  peakHoursEnd         Int? // 23 = 23h
+
+  // Comparaison thermique
+  gasPrice             Float   @default(1.50) // $/L
+  equivalentCarMpg     Float   @default(8.0) // L/100km
+  co2FactorGasoline    Float   @default(2.31) // kg CO2/L
+  co2FactorElectricity Float   @default(0.5) // kg CO2/kWh (varie par région)
+
+  // Notifications
+  notifyChargeComplete Boolean @default(true)
+  notifyLowBattery     Boolean @default(true)
+  lowBatteryThreshold  Int     @default(20)
+  notifyTirePressure   Boolean @default(true)
+
+  @@map("user_preferences")
+}
+
+// ==================== TESLA AUTH ====================
+model TeslaToken {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String   @db.Text // Chiffré AES-256
+  refreshToken String   @db.Text // Chiffré AES-256
+  expiresAt    DateTime
+  scopes       String[]
+  region       String   @default("na")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("tesla_tokens")
+}
+
+// ==================== VÉHICULES ====================
+model Vehicle {
+  id                   String              @id @default(cuid())
+  teslaId              String              @unique
+  vin                  String              @unique
+  userId               String
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Infos statiques
+  displayName          String?
+  carType              String? // Model 3, Model Y, etc.
+  trim                 String? // Long Range, Performance, etc.
+  exteriorColor        String?
+  wheelType            String?
+  year                 Int?
+
+  // État Fleet API
+  virtualKeyPaired     Boolean             @default(false)
+  commandProtocolReq   Boolean             @default(true)
+  firmwareVersion      String?
+  telemetryVersion     String?
+  fleetStatusUpdatedAt DateTime?
+
+  // Données batterie (pour calcul dégradation)
+  originalRange        Float? // Autonomie neuve (km)
+  batteryCapacity      Float? // Capacité nominale (kWh)
+
+  // Relations
+  telemetrySnapshots   TelemetrySnapshot[]
+  driveSessions        DriveSession[]
+  chargeSessions       ChargeSession[]
+  dailyStats           DailyStats[]
+  monthlyStats         MonthlyStats[]
+  chargingLocations    ChargingLocation[]
+  apiUsage             ApiUsage[]
+
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@map("vehicles")
+}
+
+// ==================== TÉLÉMÉTRIE ====================
+model TelemetrySnapshot {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  timestamp      DateTime
+
+  // Batterie
+  batteryLevel   Float?
+  energyRemaining Float?
+  estRange       Float?
+
+  // Localisation
+  latitude       Float?
+  longitude      Float?
+  heading        Float?
+
+  // Conduite
+  speed          Float?
+  odometer       Float?
+  gear           String?
+
+  // Climat
+  insideTemp     Float?
+  outsideTemp    Float?
+  hvacPower      Boolean?
+
+  // État
+  locked         Boolean?
+  sentryMode     Boolean?
+
+  // Charge (si en charge)
+  chargeState    String?
+  chargePower    Float?
+  chargeAmps     Float?
+  chargerVoltage Float?
+
+  @@index([vehicleId, timestamp])
+  @@map("telemetry_snapshots")
+}
+
+// ==================== SESSIONS DE CONDUITE ====================
+model DriveSession {
+  id                  String   @id @default(cuid())
+  vehicleId           String
+  vehicle             Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  // Temporel
+  startTime           DateTime
+  endTime             DateTime?
+  duration            Int? // minutes
+
+  // Localisation
+  startLatitude       Float
+  startLongitude      Float
+  startLocationName   String?
+  endLatitude         Float?
+  endLongitude        Float?
+  endLocationName     String?
+  routePolyline       String?  @db.Text
+
+  // Distance
+  startOdometer       Float
+  endOdometer         Float?
+  distance            Float? // km
+
+  // Énergie
+  startBattery        Float // %
+  endBattery          Float? // %
+  startEnergy         Float? // kWh
+  endEnergy           Float? // kWh
+  energyUsed          Float? // kWh
+
+  // Statistiques calculées
+  avgSpeed            Float? // km/h
+  maxSpeed            Float? // km/h
+  avgConsumption      Float? // Wh/km
+
+  // Conditions
+  avgOutsideTemp      Float?
+  hvacUsed            Boolean  @default(false)
+
+  // Élévation
+  elevationGain       Float? // m
+  elevationLoss       Float? // m
+
+  // Données détaillées (JSON)
+  speedProfile        Json? // [{timestamp, speed}, ...]
+  consumptionProfile  Json? // [{timestamp, consumption}, ...]
+  elevationProfile    Json? // [{distance, elevation}, ...]
+
+  @@index([vehicleId, startTime])
+  @@map("drive_sessions")
+}
+
+// ==================== SESSIONS DE CHARGE ====================
+model ChargeSession {
+  id               String            @id @default(cuid())
+  vehicleId        String
+  vehicle          Vehicle           @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  // Temporel
+  startTime        DateTime
+  endTime          DateTime?
+  duration         Int? // minutes
+
+  // Localisation
+  latitude         Float?
+  longitude        Float?
+  locationId       String?
+  location         ChargingLocation? @relation(fields: [locationId], references: [id])
+  locationName     String?
+
+  // Type de charge
+  chargerType      String? // home, supercharger, destination, public, work
+  connectorType    String? // NACS, CCS, Type2, etc.
+
+  // Batterie
+  startBattery     Float // %
+  endBattery       Float? // %
+  startEnergy      Float? // kWh
+  endEnergy        Float? // kWh
+
+  // Énergie
+  energyAdded      Float? // kWh
+  rangeAdded       Float? // km
+
+  // Puissance
+  maxPower         Float? // kW
+  avgPower         Float? // kW
+
+  // Coût
+  pricePerKwh      Float? // $/kWh
+  totalCost        Float? // $
+
+  // Conditions
+  outsideTemp      Float?
+  batteryTempStart Float?
+  batteryTempEnd   Float?
+
+  // Données détaillées
+  powerProfile     Json? // [{timestamp, power, batteryLevel}, ...]
+
+  @@index([vehicleId, startTime])
+  @@index([locationId])
+  @@map("charge_sessions")
+}
+
+// ==================== LIEUX DE CHARGE ====================
+model ChargingLocation {
+  id             String          @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  name           String
+  latitude       Float
+  longitude      Float
+  radius         Int             @default(100) // mètres pour géofencing
+
+  locationType   String // home, work, supercharger, public, other
+  pricePerKwh    Float? // Tarif par défaut
+
+  // Tarification avancée (domicile)
+  hasPeakPricing Boolean         @default(false)
+  peakPrice      Float?
+  offPeakPrice   Float?
+  peakHoursStart Int?
+  peakHoursEnd   Int?
+
+  chargeSessions ChargeSession[]
+
+  @@unique([vehicleId, latitude, longitude])
+  @@map("charging_locations")
+}
+
+// ==================== STATISTIQUES JOURNALIÈRES ====================
+model DailyStats {
+  id             String   @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+
+  // Conduite
+  distanceKm     Float    @default(0)
+  tripCount      Int      @default(0)
+  drivingMinutes Int      @default(0)
+
+  // Énergie conduite
+  energyUsedKwh  Float    @default(0)
+  avgConsumption Float? // Wh/km
+
+  // Vitesse
+  avgSpeed       Float?
+  maxSpeed       Float?
+
+  // Charge
+  chargeCount    Int      @default(0)
+  energyAddedKwh Float    @default(0)
+  chargingMinutes Int     @default(0)
+  chargingCost   Float    @default(0)
+
+  // Batterie
+  startBattery   Float? // % au début de journée
+  endBattery     Float? // % en fin de journée
+  minBattery     Float? // % minimum atteint
+  maxBattery     Float? // % maximum atteint
+
+  // Climat
+  avgOutsideTemp Float?
+  hvacMinutes    Int      @default(0)
+
+  // Odomètre
+  startOdometer  Float?
+  endOdometer    Float?
+
+  @@unique([vehicleId, date])
+  @@index([vehicleId, date])
+  @@map("daily_stats")
+}
+
+// ==================== STATISTIQUES MENSUELLES ====================
+model MonthlyStats {
+  id              String  @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  year            Int
+  month           Int // 1-12
+
+  // Conduite
+  distanceKm      Float   @default(0)
+  tripCount       Int     @default(0)
+  drivingHours    Float   @default(0)
+
+  // Énergie
+  energyUsedKwh   Float   @default(0)
+  avgConsumption  Float? // Wh/km
+
+  // Charge
+  chargeCount     Int     @default(0)
+  energyAddedKwh  Float   @default(0)
+  chargingHours   Float   @default(0)
+  chargingCost    Float   @default(0)
+  homeChargeKwh   Float   @default(0)
+  publicChargeKwh Float   @default(0)
+  superchargeKwh  Float   @default(0)
+
+  // Efficacité
+  efficiency      Float? // Wh/km
+
+  // Environnement
+  co2Avoided      Float? // kg
+  fuelSaved       Float? // L
+  moneySaved      Float? // $
+
+  // Comparaisons
+  vsLastMonth     Float? // % différence distance
+  vsLastYear      Float? // % différence distance
+
+  @@unique([vehicleId, year, month])
+  @@index([vehicleId, year, month])
+  @@map("monthly_stats")
+}
+
+// ==================== TRACKING COÛTS API ====================
+model ApiUsage {
+  id               String   @id @default(cuid())
+  vehicleId        String?
+  vehicle          Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date             DateTime @db.Date
+
+  streamingSignals Int      @default(0)
+  commands         Int      @default(0)
+  vehicleDataCalls Int      @default(0)
+  wakes            Int      @default(0)
+
+  estimatedCost    Decimal  @db.Decimal(10, 4)
+
+  @@unique([vehicleId, date])
+  @@index([date])
+  @@map("api_usage")
+}
