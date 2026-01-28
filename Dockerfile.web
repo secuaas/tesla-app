@@ -26,6 +26,9 @@ COPY apps/web ./apps/web
 COPY packages/shared ./packages/shared
 COPY tsconfig.json ./
 
+# Ensure public folder exists
+RUN mkdir -p /app/apps/web/public
+
 # Build packages
 RUN pnpm turbo run build --filter=@teslavault/web
 
