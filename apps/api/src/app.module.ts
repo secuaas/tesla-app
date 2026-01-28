@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
+import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
@@ -20,6 +21,7 @@ import { AdminModule } from './modules/admin/admin.module';
     }),
     ScheduleModule.forRoot(),
     PrismaModule,
+    HealthModule,
     AuthModule,
     UsersModule,
     VehiclesModule,

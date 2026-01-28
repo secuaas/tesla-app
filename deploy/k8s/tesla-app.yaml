@@ -1,0 +1,458 @@
+# TeslaVault Kubernetes Deployment
+# Environment variables will be substituted by secuops:
+# ${REGISTRY}, ${DOCKER_USER}, ${DOMAIN}, ${REPLICAS}
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tesla-app
+  labels:
+    app.kubernetes.io/name: tesla-app
+    app.kubernetes.io/managed-by: secuops
+
+---
+# PostgreSQL PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: tesla-app
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: csi-cinder-high-speed
+
+---
+# Redis PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: tesla-app
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-cinder-high-speed
+
+---
+# PostgreSQL Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: tesla-app
+type: Opaque
+stringData:
+  POSTGRES_USER: teslavault
+  POSTGRES_PASSWORD: teslavault-k8s-dev-2026
+  POSTGRES_DB: teslavault
+
+---
+# Redis Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: tesla-app
+type: Opaque
+stringData:
+  REDIS_PASSWORD: redis-k8s-dev-2026
+
+---
+# App Secret (sensitive configuration)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tesla-app-secret
+  namespace: tesla-app
+type: Opaque
+stringData:
+  JWT_SECRET: "teslavault-jwt-k8s-dev-secret-2026-change-in-prod"
+  ENCRYPTION_KEY: "teslavault-enc-k8s-dev-32char!"
+  # Tesla API credentials - TO BE CONFIGURED
+  TESLA_CLIENT_ID: "your-tesla-client-id"
+  TESLA_CLIENT_SECRET: "your-tesla-client-secret"
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: tesla-app
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - teslavault
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - teslavault
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: tesla-app
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: tesla-app
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            - redis-server
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          ports:
+            - containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-pvc
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: tesla-app
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+  type: ClusterIP
+
+---
+# API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: tesla-app
+  labels:
+    app: api
+    app.kubernetes.io/name: tesla-app
+    app.kubernetes.io/component: api
+spec:
+  replicas: ${REPLICAS}
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      initContainers:
+        # Wait for PostgreSQL to be ready
+        - name: wait-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done']
+        # Wait for Redis to be ready
+        - name: wait-redis
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z redis 6379; do echo waiting for redis; sleep 2; done']
+      containers:
+        - name: api
+          image: ${REGISTRY}/${DOCKER_USER}/tesla-app-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: CORS_ORIGIN
+              value: "https://tesla-app.${DOMAIN}"
+            - name: DATABASE_URL
+              value: "postgresql://teslavault:teslavault-k8s-dev-2026@postgres:5432/teslavault?schema=public"
+            - name: REDIS_URL
+              value: "redis://:redis-k8s-dev-2026@redis:6379"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tesla-app-secret
+                  key: JWT_SECRET
+            - name: JWT_EXPIRES_IN
+              value: "7d"
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tesla-app-secret
+                  key: ENCRYPTION_KEY
+            - name: TESLA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tesla-app-secret
+                  key: TESLA_CLIENT_ID
+            - name: TESLA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tesla-app-secret
+                  key: TESLA_CLIENT_SECRET
+            - name: TESLA_REDIRECT_URI
+              value: "https://tesla-app.${DOMAIN}/api/auth/tesla/callback"
+            - name: TESLA_AUDIENCE
+              value: "https://fleet-api.prd.na.vn.cloud.tesla.com"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: tesla-app
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 3001
+      targetPort: 3001
+  type: ClusterIP
+
+---
+# Web Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tesla-app
+  labels:
+    app: web
+    app.kubernetes.io/name: tesla-app
+    app.kubernetes.io/component: web
+spec:
+  replicas: ${REPLICAS}
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      imagePullSecrets:
+        - name: registry-secret
+      containers:
+        - name: web
+          image: ${REGISTRY}/${DOCKER_USER}/tesla-app-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://tesla-app.${DOMAIN}/api"
+            - name: NEXT_PUBLIC_WS_URL
+              value: "wss://tesla-app.${DOMAIN}"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+# Web Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: tesla-app
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tesla-app
+  namespace: tesla-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # WebSocket support for telemetry
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - tesla-app.${DOMAIN}
+      secretName: tesla-app-tls
+  rules:
+    - host: tesla-app.${DOMAIN}
+      http:
+        paths:
+          # API routes
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3001
+          # WebSocket route for socket.io
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3001
+          # Frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000
