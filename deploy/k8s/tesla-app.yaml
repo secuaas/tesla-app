@@ -11,35 +11,8 @@ metadata:
     app.kubernetes.io/name: tesla-app
     app.kubernetes.io/managed-by: secuops
 
----
-# PostgreSQL PVC
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: tesla-app
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: csi-cinder-high-speed
-
----
-# Redis PVC
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-  namespace: tesla-app
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: csi-cinder-high-speed
+# Note: PVCs removed for dev environment - using emptyDir instead
+# For production, uncomment and use proper storage class
 
 ---
 # PostgreSQL Secret
@@ -104,6 +77,9 @@ spec:
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           envFrom:
             - secretRef:
                 name: postgres-secret
@@ -135,8 +111,7 @@ spec:
             periodSeconds: 5
       volumes:
         - name: postgres-data
-          persistentVolumeClaim:
-            claimName: postgres-pvc
+          emptyDir: {}
 
 ---
 # PostgreSQL Service
@@ -209,8 +184,7 @@ spec:
             periodSeconds: 5
       volumes:
         - name: redis-data
-          persistentVolumeClaim:
-            claimName: redis-pvc
+          emptyDir: {}
 
 ---
 # Redis Service
