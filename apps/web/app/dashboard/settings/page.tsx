@@ -70,7 +70,7 @@ export default function SettingsPage() {
     if (!preferences) return;
     setSaving(true);
     try {
-      await api.updatePreferences(preferences);
+      await api.updatePreferences(preferences as unknown as Record<string, unknown>);
       toast({
         title: 'Settings saved',
         description: 'Your preferences have been updated.',
