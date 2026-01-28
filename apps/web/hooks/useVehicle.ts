@@ -103,10 +103,10 @@ export function useVehicle(vehicleId: string) {
 
   // Update state from overview if available
   useEffect(() => {
-    if (overview?.current) {
+    if (overview?.current && typeof overview.current === 'object') {
       setState((prev) => ({
         ...prev,
-        ...overview.current,
+        ...(overview.current as Partial<VehicleState>),
       }));
     }
   }, [overview]);
