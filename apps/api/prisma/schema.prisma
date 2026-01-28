@@ -382,6 +382,26 @@ model MonthlyStats {
   @@map("monthly_stats")
 }
 
+// ==================== PARAMÈTRES SYSTÈME ====================
+model SystemSettings {
+  id        String   @id @default("system")
+
+  // Tesla Fleet API
+  teslaClientId     String?
+  teslaClientSecret String?  @db.Text // Chiffré
+  teslaRedirectUri  String?
+  teslaAudience     String   @default("https://fleet-api.prd.na.vn.cloud.tesla.com")
+
+  // Configuration générale
+  appName           String   @default("TeslaVault")
+  maintenanceMode   Boolean  @default(false)
+
+  updatedAt         DateTime @updatedAt
+  updatedBy         String?
+
+  @@map("system_settings")
+}
+
 // ==================== TRACKING COÛTS API ====================
 model ApiUsage {
   id               String   @id @default(cuid())

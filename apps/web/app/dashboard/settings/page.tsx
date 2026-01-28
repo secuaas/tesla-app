@@ -14,10 +14,10 @@ import {
   Key,
   Bell,
   DollarSign,
-  Thermometer,
   Ruler,
   Save,
-  ExternalLink,
+  Shield,
+  Settings2,
 } from 'lucide-react';
 
 interface UserPreferences {
@@ -31,18 +31,30 @@ interface UserPreferences {
   lowBatteryThreshold: number;
 }
 
+interface AdminSettings {
+  teslaClientId: string | null;
+  teslaClientSecret: string | null;
+  teslaRedirectUri: string | null;
+  teslaAudience: string;
+}
+
 interface User {
   id: string;
   email: string;
   name?: string;
+  role?: string;
 }
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [adminSettings, setAdminSettings] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingAdmin, setSavingAdmin] = useState(false);
   const { toast } = useToast();
+
+  const isAdmin = user?.role === 'ADMIN';
 
   useEffect(() => {
     Promise.all([
@@ -61,6 +73,18 @@ export default function SettingsPage() {
           notifyLowBattery: true,
           lowBatteryThreshold: 20,
         });
+
+        // Load admin settings if user is admin
+        if (userData?.role === 'ADMIN') {
+          api.getAdminSettings()
+            .then((settings: any) => setAdminSettings(settings))
+            .catch(() => setAdminSettings({
+              teslaClientId: null,
+              teslaClientSecret: null,
+              teslaRedirectUri: null,
+              teslaAudience: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
+            }));
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -86,6 +110,26 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveAdminSettings = async () => {
+    if (!adminSettings) return;
+    setSavingAdmin(true);
+    try {
+      await api.updateAdminSettings(adminSettings as unknown as Record<string, unknown>);
+      toast({
+        title: 'Admin settings saved',
+        description: 'Tesla API configuration has been updated.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save admin settings.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingAdmin(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -103,7 +147,81 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Tesla Connection */}
+      {/* Admin Section - Tesla API Configuration */}
+      {isAdmin && (
+        <Card className="border-amber-500/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-amber-500" />
+              Admin: Tesla Fleet API Configuration
+            </CardTitle>
+            <CardDescription>
+              Configure Tesla Fleet API credentials for all users
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="teslaClientId">Tesla Client ID</Label>
+                <Input
+                  id="teslaClientId"
+                  type="text"
+                  placeholder="Enter Tesla Client ID"
+                  value={adminSettings?.teslaClientId || ''}
+                  onChange={(e) => setAdminSettings(s => s ? {...s, teslaClientId: e.target.value} : s)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="teslaClientSecret">Tesla Client Secret</Label>
+                <Input
+                  id="teslaClientSecret"
+                  type="password"
+                  placeholder="Enter Tesla Client Secret"
+                  value={adminSettings?.teslaClientSecret || ''}
+                  onChange={(e) => setAdminSettings(s => s ? {...s, teslaClientSecret: e.target.value} : s)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="teslaRedirectUri">Redirect URI</Label>
+                <Input
+                  id="teslaRedirectUri"
+                  type="url"
+                  placeholder="https://your-app.com/api/auth/tesla/callback"
+                  value={adminSettings?.teslaRedirectUri || ''}
+                  onChange={(e) => setAdminSettings(s => s ? {...s, teslaRedirectUri: e.target.value} : s)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="teslaAudience">Fleet API Region</Label>
+                <select
+                  id="teslaAudience"
+                  className="w-full h-10 px-3 rounded-md border bg-background"
+                  value={adminSettings?.teslaAudience || 'https://fleet-api.prd.na.vn.cloud.tesla.com'}
+                  onChange={(e) => setAdminSettings(s => s ? {...s, teslaAudience: e.target.value} : s)}
+                >
+                  <option value="https://fleet-api.prd.na.vn.cloud.tesla.com">North America</option>
+                  <option value="https://fleet-api.prd.eu.vn.cloud.tesla.com">Europe</option>
+                  <option value="https://fleet-api.prd.cn.vn.cloud.tesla.cn">China</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={handleSaveAdminSettings} disabled={savingAdmin} variant="default">
+                <Save className="h-4 w-4 mr-2" />
+                {savingAdmin ? 'Saving...' : 'Save Tesla Configuration'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tesla Connection - User Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -123,19 +241,19 @@ export default function SettingsPage() {
               <div>
                 <p className="font-medium">Tesla Fleet API</p>
                 <p className="text-sm text-muted-foreground">
-                  Not connected
+                  {adminSettings?.teslaClientId ? 'Configured - Ready to connect' : 'Not configured'}
                 </p>
               </div>
             </div>
-            <Button disabled>
-              <ExternalLink className="h-4 w-4 mr-2" />
+            <Button disabled={!adminSettings?.teslaClientId}>
               Connect Tesla
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Tesla API credentials need to be configured by the administrator.
-            Once configured, you&apos;ll be able to connect your Tesla account here.
-          </p>
+          {!adminSettings?.teslaClientId && !isAdmin && (
+            <p className="text-sm text-muted-foreground">
+              Tesla API credentials need to be configured by the administrator.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -293,13 +411,16 @@ export default function SettingsPage() {
       {/* Account Info */}
       <Card>
         <CardHeader>
-          <CardTitle>Account Information</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Settings2 className="h-5 w-5" />
+            Account Information
+          </CardTitle>
           <CardDescription>
             Your account details
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Email</Label>
               <Input value={user?.email || ''} disabled />
@@ -307,6 +428,10 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <Label>Name</Label>
               <Input value={user?.name || ''} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <Input value={user?.role || 'USER'} disabled />
             </div>
           </div>
         </CardContent>
@@ -316,7 +441,7 @@ export default function SettingsPage() {
       <div className="flex justify-end">
         <Button onClick={handleSavePreferences} disabled={saving}>
           <Save className="h-4 w-4 mr-2" />
-          {saving ? 'Saving...' : 'Save Settings'}
+          {saving ? 'Saving...' : 'Save Preferences'}
         </Button>
       </div>
     </div>

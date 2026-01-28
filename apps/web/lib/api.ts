@@ -227,6 +227,18 @@ class ApiClient {
       params: { year, month },
     });
   }
+
+  // Admin
+  async getAdminSettings(): Promise<Record<string, unknown>> {
+    return this.request('/admin/settings');
+  }
+
+  async updateAdminSettings(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request('/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient(API_URL);

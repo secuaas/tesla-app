@@ -3,10 +3,12 @@ import {
   Get,
   Delete,
   Patch,
+  Put,
   Param,
   Query,
   Body,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
@@ -52,5 +54,27 @@ export class AdminController {
     @Body() body: { role: 'USER' | 'ADMIN' },
   ) {
     return this.adminService.updateUserRole(userId, body.role);
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get system settings' })
+  async getSystemSettings() {
+    return this.adminService.getSystemSettings();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Update system settings' })
+  async updateSystemSettings(
+    @Body() body: {
+      teslaClientId?: string;
+      teslaClientSecret?: string;
+      teslaRedirectUri?: string;
+      teslaAudience?: string;
+      appName?: string;
+      maintenanceMode?: boolean;
+    },
+    @Request() req: any,
+  ) {
+    return this.adminService.updateSystemSettings(body, req.user.id);
   }
 }

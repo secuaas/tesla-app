@@ -56,4 +56,42 @@ export class AdminService {
       data: { role },
     });
   }
+
+  async getSystemSettings() {
+    let settings = await this.prisma.systemSettings.findUnique({
+      where: { id: 'system' },
+    });
+
+    if (!settings) {
+      settings = await this.prisma.systemSettings.create({
+        data: { id: 'system' },
+      });
+    }
+
+    // Mask the client secret for security
+    return {
+      ...settings,
+      teslaClientSecret: settings.teslaClientSecret ? '••••••••' : null,
+    };
+  }
+
+  async updateSystemSettings(data: {
+    teslaClientId?: string;
+    teslaClientSecret?: string;
+    teslaRedirectUri?: string;
+    teslaAudience?: string;
+    appName?: string;
+    maintenanceMode?: boolean;
+  }, updatedBy: string) {
+    // Don't update secret if it's the masked value
+    if (data.teslaClientSecret === '••••••••') {
+      delete data.teslaClientSecret;
+    }
+
+    return this.prisma.systemSettings.upsert({
+      where: { id: 'system' },
+      update: { ...data, updatedBy },
+      create: { id: 'system', ...data, updatedBy },
+    });
+  }
 }
