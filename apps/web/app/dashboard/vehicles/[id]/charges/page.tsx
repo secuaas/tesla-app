@@ -54,8 +54,8 @@ export default function ChargesPage() {
     queryFn: () => api.getChargesSummary(vehicleId, { startDate, endDate }),
   });
 
-  const charges = (chargesData as any)?.charges || [];
-  const total = (chargesData as any)?.total || 0;
+  const charges = chargesData?.charges || [];
+  const total = chargesData?.total || 0;
 
   return (
     <div className="space-y-6">

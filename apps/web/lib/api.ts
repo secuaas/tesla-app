@@ -171,11 +171,11 @@ class ApiClient {
   }
 
   // Trips
-  async getTrips(vehicleId: string, params?: { startDate?: string; endDate?: string; limit?: number }) {
+  async getTrips(vehicleId: string, params?: { startDate?: string; endDate?: string; limit?: number }): Promise<{ trips: unknown[]; total: number }> {
     return this.request(`/vehicles/${vehicleId}/trips`, { params });
   }
 
-  async getTripsSummary(vehicleId: string, params?: { startDate?: string; endDate?: string }) {
+  async getTripsSummary(vehicleId: string, params?: { startDate?: string; endDate?: string }): Promise<Record<string, unknown>> {
     return this.request(`/vehicles/${vehicleId}/trips/summary`, { params });
   }
 
@@ -184,11 +184,11 @@ class ApiClient {
   }
 
   // Charges
-  async getCharges(vehicleId: string, params?: { startDate?: string; endDate?: string; chargerType?: string }) {
+  async getCharges(vehicleId: string, params?: { startDate?: string; endDate?: string; chargerType?: string }): Promise<{ charges: unknown[]; total: number }> {
     return this.request(`/vehicles/${vehicleId}/charges`, { params });
   }
 
-  async getChargesSummary(vehicleId: string, params?: { startDate?: string; endDate?: string }) {
+  async getChargesSummary(vehicleId: string, params?: { startDate?: string; endDate?: string }): Promise<Record<string, unknown>> {
     return this.request(`/vehicles/${vehicleId}/charges/summary`, { params });
   }
 
@@ -197,27 +197,27 @@ class ApiClient {
   }
 
   // Stats
-  async getDailyStats(vehicleId: string, startDate: string, endDate: string) {
+  async getDailyStats(vehicleId: string, startDate: string, endDate: string): Promise<unknown[]> {
     return this.request(`/vehicles/${vehicleId}/stats/daily`, {
       params: { startDate, endDate },
     });
   }
 
-  async getMonthlyStats(vehicleId: string, year: number, month?: number) {
+  async getMonthlyStats(vehicleId: string, year: number, month?: number): Promise<unknown[]> {
     return this.request(`/vehicles/${vehicleId}/stats/monthly`, {
       params: { year, month },
     });
   }
 
-  async getEfficiencyStats(vehicleId: string) {
+  async getEfficiencyStats(vehicleId: string): Promise<Record<string, unknown>> {
     return this.request(`/vehicles/${vehicleId}/stats/efficiency`);
   }
 
-  async getEnvironmentalStats(vehicleId: string) {
+  async getEnvironmentalStats(vehicleId: string): Promise<Record<string, unknown>> {
     return this.request(`/vehicles/${vehicleId}/stats/environmental`);
   }
 
-  async getStatsOverview(vehicleId: string) {
+  async getStatsOverview(vehicleId: string): Promise<Record<string, unknown>> {
     return this.request(`/vehicles/${vehicleId}/stats/overview`);
   }
 
