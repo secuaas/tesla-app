@@ -53,7 +53,7 @@ export class TelemetryGateway
     if (!this.vehicleSubscriptions.has(vehicleId)) {
       this.vehicleSubscriptions.set(vehicleId, new Set());
     }
-    this.vehicleSubscriptions.get(vehicleId).add(client.id);
+    this.vehicleSubscriptions.get(vehicleId)!.add(client.id);
 
     client.join(`vehicle:${vehicleId}`);
 

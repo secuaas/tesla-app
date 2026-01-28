@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -150,7 +151,7 @@ export class ChargesService {
       maxPower?: number;
       avgPower?: number;
       batteryTempEnd?: number;
-      powerProfile?: unknown;
+      powerProfile?: Prisma.InputJsonValue;
     },
   ) {
     const session = await this.prisma.chargeSession.findUnique({
